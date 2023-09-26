@@ -15,13 +15,23 @@ include "llvm/Target/Target.td"
 // Target-dependent interfaces
 //===----------------------------------------------------------------------===//
 
-include "MYRISCVXRegisterInfo.td"
-include "MYRISCVXInstrInfo.td"
+def RV64 : HwMode<"+64bit">; // MYRISCVX64用のスイッチを定義
+def RV32 : HwMode<"-64bit">; // MYRISCVX32用のスイッチを定義
+
+include "MYRISCVXRegisterInfo.td" // レジスタ定義を含んだtdファイル
+include "MYRISCVXInstrInfo.td"    // 命令定義を含んだtdファイル
 
 def MYRISCVXInstrInfo : InstrInfo;
 
-// @{ MYRISCVX_td_MYRISCVX
+// MYRISCVXターゲットアーキテクチャを作成する
 def MYRISCVX : Target {
+  // MYRISCVXInstrInfoは上記で定義したもの。InstrInfoを継承している。
   let InstructionSet = MYRISCVXInstrInfo;
 }
-// @} MYRISCVX_td_MYRISCVX
+
+def FeatureRV64 : SubtargetFeature<"64bit", "HasRV64", "true", "RV64 support">;
+
+// CPUモデルcpu-rv32/cpu-rv64
+// cpu-rv64のときは、FeatureRV64が有効になる
+def : ProcessorModel<"cpu-rv32", NoSchedModel, []>;
+def : ProcessorModel<"cpu-rv64", NoSchedModel, [FeatureRV64]>;
