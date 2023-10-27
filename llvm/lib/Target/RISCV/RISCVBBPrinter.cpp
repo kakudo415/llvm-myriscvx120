@@ -1,3 +1,6 @@
+// clang -c -emit-llvm -O2 --target=riscv64-unknown-elf <source>.c
+// llc -march=riscv64 <source>.bc
+
 #include "RISCV.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 
