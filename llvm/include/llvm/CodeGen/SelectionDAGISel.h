@@ -348,6 +348,8 @@ private:
                         bool &HadTailCall);
   void FinishBasicBlock();
 
+  void InsertSIMDInstructions();
+
   void CodeGenAndEmitDAG();
 
   /// Generate instructions for lowering the incoming arguments of the

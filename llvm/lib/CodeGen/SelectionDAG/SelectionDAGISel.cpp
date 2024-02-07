@@ -736,6 +736,12 @@ void SelectionDAGISel::ComputeLiveOutVRegInfo() {
   } while (!Worklist.empty());
 }
 
+void SelectionDAGISel::InsertSIMDInstructions() {
+  for (SDNode &Node : CurDAG->allnodes()) {
+    Node.dump();
+  }
+}
+
 void SelectionDAGISel::CodeGenAndEmitDAG() {
   StringRef GroupName = "sdag";
   StringRef GroupDescription = "Instruction Selection and Scheduling";
@@ -787,6 +793,11 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
                     << printMBBReference(*FuncInfo->MBB) << " '" << BlockName
                     << "'\n";
              CurDAG->dump());
+
+  CurDAG->dump();
+
+  errs() << "1. Insert SIMD instructions where possible\n\n";
+  InsertSIMDInstructions();
 
 #ifndef NDEBUG
   if (TTI.hasBranchDivergence())
