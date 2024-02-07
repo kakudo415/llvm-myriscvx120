@@ -24,6 +24,7 @@ add_llvm_component_library(LLVMSelectionDAG
   SelectionDAGTargetInfo.cpp
   StatepointLowering.cpp
   TargetLowering.cpp
+  SIMDSelector.cpp
 
   DEPENDS
   intrinsics_gen

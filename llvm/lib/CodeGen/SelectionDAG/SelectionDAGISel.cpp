@@ -736,12 +736,6 @@ void SelectionDAGISel::ComputeLiveOutVRegInfo() {
   } while (!Worklist.empty());
 }
 
-void SelectionDAGISel::InsertSIMDInstructions() {
-  for (SDNode &Node : CurDAG->allnodes()) {
-    Node.dump();
-  }
-}
-
 void SelectionDAGISel::CodeGenAndEmitDAG() {
   StringRef GroupName = "sdag";
   StringRef GroupDescription = "Instruction Selection and Scheduling";
