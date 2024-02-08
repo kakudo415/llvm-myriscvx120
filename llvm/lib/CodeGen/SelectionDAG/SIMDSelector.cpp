@@ -93,6 +93,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -101,8 +102,54 @@ using namespace llvm;
 
 #define DEBUG_TYPE "isel"
 
+bool IsLeaf(SelectionDAG *SDAG, std::set<SDNode *> Ignore, SDNode *Node);
+std::set<SDNode *> FindLeaves(SelectionDAG *SDAG, std::set<SDNode *> Ignore);
+
+class CDNode {
+public:
+  std::vector<SDNode *> Choices;
+};
+
 void SelectionDAGISel::InsertSIMDInstructions() {
-  for (SDNode &Node : CurDAG->allnodes()) {
-    Node.dump();
+  std::vector<CDNode> ChoiceDAG;
+
+  std::set<SDNode *> Unreached;
+  std::set<SDNode *> Seen;
+
+  while (true) {
+    std::set<SDNode *> Leaves = FindLeaves(CurDAG, Seen);
+    Unreached.insert(Leaves.begin(), Leaves.end());
+
+    if (Seen.size() == CurDAG->allnodes_size()) {
+      return;
+    }
+
+    SDNode *CurSDNode = *Unreached.begin();
+    Unreached.erase(CurSDNode);
+
+    Seen.insert(CurSDNode);
+    CurSDNode->dump();
   }
+}
+
+std::set<SDNode *> FindLeaves(SelectionDAG *SDAG, std::set<SDNode *> Ignore) {
+  std::set<SDNode *> Leaves;
+  for (SDNode &Node : SDAG->allnodes()) {
+    if (IsLeaf(SDAG, Ignore, &Node)) {
+      Leaves.insert(&Node);
+    }
+  }
+  return Leaves;
+}
+
+bool IsLeaf(SelectionDAG *SDAG, std::set<SDNode *> Ignore, SDNode *Node) {
+  if (Ignore.find(Node) != Ignore.end()) {
+    return false;
+  }
+  for (const SDUse &Operand : Node->ops()) {
+    if (Ignore.find(Operand.get().getNode()) == Ignore.end()) {
+      return false;
+    }
+  }
+  return true;
 }
