@@ -91,6 +91,7 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -102,56 +103,84 @@ using namespace llvm;
 
 #define DEBUG_TYPE "isel"
 
+class ChoiceNode;
+class PsuedoNode;
+
+class ChoiceNode {
+public:
+  std::vector<PsuedoNode *> Choices;
+};
+
+class PsuedoNode {
+public:
+  unsigned Opcode;
+  std::vector<ChoiceNode *> Operands;
+};
+
 bool IsLeaf(SelectionDAG *SDAG, std::set<SDNode *> Ignore, SDNode *Node);
 std::set<SDNode *> FindLeaves(SelectionDAG *SDAG, std::set<SDNode *> Ignore);
 
-class CDNode {
-public:
-  std::vector<SDNode *> Choices;
-};
+bool IsLeaf(std::set<ChoiceNode *> Ignore, ChoiceNode *Node);
+std::set<ChoiceNode *> FindLeaves(std::vector<ChoiceNode *> ChoiceDAG,
+                                  std::set<ChoiceNode *> Ignore);
 
 void SelectionDAGISel::InsertSIMDInstructions() {
-  std::vector<CDNode *> ChoiceDAG;
+  std::vector<ChoiceNode *> ChoiceDAG;
+  std::vector<PsuedoNode *> PsuedoDAG;
 
-  std::set<SDNode *> Unreached;
-  std::set<SDNode *> Seen;
+  std::map<SDNode *, PsuedoNode *> SDNodeToPsuedoNode;
+  std::map<PsuedoNode *, ChoiceNode *> PsuedoNodeToChoiceNode;
 
-  std::vector<SDNode *> CopyFromRegSDNodePool; // Only i32 for now
+  // Create PsuedoDAG and ChoiceDAG
+  std::set<SDNode *> UnreachedSDNodes;
+  std::set<SDNode *> SeenSDNodes;
 
   while (true) {
-    std::set<SDNode *> Leaves = FindLeaves(CurDAG, Seen);
+    std::set<SDNode *> Leaves = FindLeaves(CurDAG, SeenSDNodes);
+    UnreachedSDNodes.insert(Leaves.begin(), Leaves.end());
+
+    if (SeenSDNodes.size() == CurDAG->allnodes_size()) {
+      break;
+    }
+
+    SDNode *CurSDNode = *UnreachedSDNodes.begin();
+    UnreachedSDNodes.erase(CurSDNode);
+    SeenSDNodes.insert(CurSDNode);
+
+    PsuedoNode *CopyOfCurSDNode = new PsuedoNode();
+    CopyOfCurSDNode->Opcode = CurSDNode->getOpcode();
+    for (const SDUse &Operand : CurSDNode->ops()) {
+      CopyOfCurSDNode->Operands.push_back(
+          PsuedoNodeToChoiceNode[SDNodeToPsuedoNode[Operand.get().getNode()]]);
+    }
+    PsuedoDAG.push_back(CopyOfCurSDNode);
+    SDNodeToPsuedoNode[CurSDNode] = CopyOfCurSDNode;
+
+    ChoiceNode *CurChoiceNode = new ChoiceNode();
+    CurChoiceNode->Choices.push_back(NULL); // Nop
+    CurChoiceNode->Choices.push_back(CopyOfCurSDNode);
+    ChoiceDAG.push_back(CurChoiceNode);
+    PsuedoNodeToChoiceNode[CopyOfCurSDNode] = CurChoiceNode;
+  }
+
+  // Insert SIMD instructions
+  std::set<ChoiceNode *> Unreached;
+  std::set<ChoiceNode *> Seen;
+
+  while (true) {
+    std::set<ChoiceNode *> Leaves = FindLeaves(ChoiceDAG, Seen);
     Unreached.insert(Leaves.begin(), Leaves.end());
 
-    if (Seen.size() == CurDAG->allnodes_size()) {
+    if (Seen.size() == ChoiceDAG.size()) {
       return;
     }
 
-    SDNode *CurSDNode = *Unreached.begin();
-    Unreached.erase(CurSDNode);
-    Seen.insert(CurSDNode);
+    ChoiceNode *CurChoiceNode = *Unreached.begin();
+    Unreached.erase(CurChoiceNode);
+    Seen.insert(CurChoiceNode);
 
-    switch (CurSDNode->getOpcode()) {
-    case ISD::CopyFromReg: {
-      if (CurSDNode->getValueType(0) != MVT::i32) {
-        break; // Only i32 for now
-      }
-      for (SDNode *PastCopyFromRegSDNode : CopyFromRegSDNodePool) {
-        CurSDNode->dump();
-        PastCopyFromRegSDNode->dump();
-        errs() << "Inserting a SIMD instruction\n";
-
-        // Packing
-        const std::vector<SDValue> VecOps = {
-            PastCopyFromRegSDNode->getOperand(1), CurSDNode->getOperand(1)};
-        ArrayRef<SDValue> Ops(VecOps);
-        SDNode *VectorSDNode =
-            CurDAG->getBuildVector(EVT(MVT::v2i32), SDLoc(CurSDNode), Ops)
-                .getNode();
-      }
-      CopyFromRegSDNodePool.push_back(CurSDNode);
-      break;
-    }
-    }
+    errs() << "CurChoiceNode\n";
+    errs() << CurChoiceNode->Choices[1]->Opcode << "\n";
   }
 }
 
@@ -172,6 +201,34 @@ bool IsLeaf(SelectionDAG *SDAG, std::set<SDNode *> Ignore, SDNode *Node) {
   for (const SDUse &Operand : Node->ops()) {
     if (Ignore.find(Operand.get().getNode()) == Ignore.end()) {
       return false;
+    }
+  }
+  return true;
+}
+
+std::set<ChoiceNode *> FindLeaves(std::vector<ChoiceNode *> ChoiceDAG,
+                                  std::set<ChoiceNode *> Ignore) {
+  std::set<ChoiceNode *> Leaves;
+  for (ChoiceNode *Node : ChoiceDAG) {
+    if (IsLeaf(Ignore, Node)) {
+      Leaves.insert(Node);
+    }
+  }
+  return Leaves;
+}
+
+bool IsLeaf(std::set<ChoiceNode *> Ignore, ChoiceNode *Node) {
+  if (Ignore.find(Node) != Ignore.end()) {
+    return false;
+  }
+  for (PsuedoNode *Choice : Node->Choices) {
+    if (Choice == NULL) {
+      continue;
+    }
+    for (ChoiceNode *Operand : Choice->Operands) {
+      if (Ignore.find(Operand) == Ignore.end()) {
+        return false;
+      }
     }
   }
   return true;

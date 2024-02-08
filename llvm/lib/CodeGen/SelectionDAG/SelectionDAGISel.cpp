@@ -796,8 +796,6 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
   errs() << "\n";
   CurDAG->dump();
 
-  CurDAG->viewGraph("After Inserting: " + BlockName);
-
 #ifndef NDEBUG
   if (TTI.hasBranchDivergence())
     CurDAG->VerifyDAGDivergence();
