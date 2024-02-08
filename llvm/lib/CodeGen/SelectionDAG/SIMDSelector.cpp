@@ -116,6 +116,7 @@ void SelectionDAGISel::InsertSIMDInstructions() {
   std::set<SDNode *> Unreached;
   std::set<SDNode *> Seen;
 
+  std::vector<SDNode *> CopyFromRegSDNodePool;
   while (true) {
     std::set<SDNode *> Leaves = FindLeaves(CurDAG, Seen);
     Unreached.insert(Leaves.begin(), Leaves.end());
@@ -126,9 +127,19 @@ void SelectionDAGISel::InsertSIMDInstructions() {
 
     SDNode *CurSDNode = *Unreached.begin();
     Unreached.erase(CurSDNode);
-
     Seen.insert(CurSDNode);
-    CurSDNode->dump();
+
+    switch (CurSDNode->getOpcode()) {
+    case ISD::CopyFromReg: {
+      for (SDNode *PastCopyFromRegSDNode : CopyFromRegSDNodePool) {
+        CurSDNode->dump();
+        PastCopyFromRegSDNode->dump();
+        errs() << "SIMDed!\n";
+      }
+      CopyFromRegSDNodePool.push_back(CurSDNode);
+      break;
+    }
+    }
   }
 }
 
