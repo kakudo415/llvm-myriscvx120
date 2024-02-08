@@ -111,12 +111,13 @@ public:
 };
 
 void SelectionDAGISel::InsertSIMDInstructions() {
-  std::vector<CDNode> ChoiceDAG;
+  std::vector<CDNode *> ChoiceDAG;
 
   std::set<SDNode *> Unreached;
   std::set<SDNode *> Seen;
 
-  std::vector<SDNode *> CopyFromRegSDNodePool;
+  std::vector<SDNode *> CopyFromRegSDNodePool; // Only i32 for now
+
   while (true) {
     std::set<SDNode *> Leaves = FindLeaves(CurDAG, Seen);
     Unreached.insert(Leaves.begin(), Leaves.end());
@@ -131,10 +132,21 @@ void SelectionDAGISel::InsertSIMDInstructions() {
 
     switch (CurSDNode->getOpcode()) {
     case ISD::CopyFromReg: {
+      if (CurSDNode->getValueType(0) != MVT::i32) {
+        break; // Only i32 for now
+      }
       for (SDNode *PastCopyFromRegSDNode : CopyFromRegSDNodePool) {
         CurSDNode->dump();
         PastCopyFromRegSDNode->dump();
-        errs() << "SIMDed!\n";
+        errs() << "Inserting a SIMD instruction\n";
+
+        // Packing
+        const std::vector<SDValue> VecOps = {
+            PastCopyFromRegSDNode->getOperand(1), CurSDNode->getOperand(1)};
+        ArrayRef<SDValue> Ops(VecOps);
+        SDNode *VectorSDNode =
+            CurDAG->getBuildVector(EVT(MVT::v2i32), SDLoc(CurSDNode), Ops)
+                .getNode();
       }
       CopyFromRegSDNodePool.push_back(CurSDNode);
       break;

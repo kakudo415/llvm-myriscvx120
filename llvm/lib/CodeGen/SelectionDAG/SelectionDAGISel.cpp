@@ -793,6 +793,11 @@ void SelectionDAGISel::CodeGenAndEmitDAG() {
   errs() << "1. Insert SIMD instructions where possible\n\n";
   InsertSIMDInstructions();
 
+  errs() << "\n";
+  CurDAG->dump();
+
+  CurDAG->viewGraph("After Inserting: " + BlockName);
+
 #ifndef NDEBUG
   if (TTI.hasBranchDivergence())
     CurDAG->VerifyDAGDivergence();
